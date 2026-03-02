@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "docunderstand"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+docunderstand = "docunderstand.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/docunderstand"]
