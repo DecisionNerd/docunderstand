@@ -35,6 +35,33 @@ Early approaches used only text. Modern models (LayoutLM family, Donut) fuse all
 
 ---
 
+## The Perception / Semantics Boundary
+
+A production VRDU system should split responsibilities cleanly:
+
+- **Perception layer** (`docunderstand`) — where is the text, what structural role does it play, and how does it map back to pixels?
+- **Semantics layer** (`infoextract`) — what does it mean, what business entities does it contain, how does it align to an ontology?
+
+This mirrors how cloud document platforms are built. Google Document AI emits layout units with text anchors and bounding polygons, then exposes entities with page anchors separately. Amazon Textract emits Block objects with geometry and relationships, then exposes key-value and table structure as a second pass. Microsoft Document Intelligence emits a reading-order content string with bounding regions, then layers structured field extraction on top.
+
+The perception layer must own **document-intrinsic structural roles** — header, footer, page number, title, paragraph, table, selection mark, signature, reading order, reading direction, language/script — because these are layout facts, not business ontology decisions.
+
+---
+
+## Grounded Extraction and Redaction
+
+Grounding is the process of tying semantic claims back to the source document: which token, which character offset, which page region. For extraction, grounding enables human review and auditability. For redaction, it is mandatory — you cannot safely redact a document unless you know exactly which pixels carry the sensitive content.
+
+A robust anchor representation stores all three reference types per entity:
+
+1. **Token / glyph IDs** — precise within the current extraction
+2. **Text-stream spans** — stable character offsets in a canonical reading-order string; survives tokenisation drift across OCR engine versions
+3. **Page-local polygon regions** — the final source for render-time redaction geometry; an array, not a single box, because entities can span multiple lines or pages
+
+See [Pipeline Architecture](pipeline.md) and the [Canonical Schema](../reference/schema.md) for the full data contract.
+
+---
+
 ## Key Tasks
 
 - **Layout Analysis** — detecting regions, reading order, document hierarchy

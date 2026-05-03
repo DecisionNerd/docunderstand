@@ -2,9 +2,11 @@
 
 ## Purpose
 
-`docunderstand` is a companion library to [infoextract](https://github.com/DecisionNerd/infoextract) for working with visually rich documents — PDFs, scanned forms, invoices, receipts, and any document where spatial layout carries meaning alongside textual content.
+`docunderstand` is the go-to Python workbench for visually rich document understanding. Given a VRDU problem, it provides all the tools needed to: understand the problem, choose the right approach, compose the right components, and produce a standard `ExtractionResult` that downstream systems can consume regardless of how the document was processed.
 
-The library provides building blocks for VRDU pipelines: document ingestion, layout-aware text extraction, spatial relationship modelling, entity extraction, and structured output.
+It is not a single prescribed pipeline. VRDU problems vary enormously — a born-digital invoice, a 1970s scanned government form, and a camera photo of a receipt each require different tools. `docunderstand` covers all of those paths with a composable component model and a stable output contract.
+
+As a companion to [infoextract](https://github.com/DecisionNerd/infoextract), the library owns **perception, geometric grounding, reading order, and document-intrinsic structure**. Business semantics, ontology alignment, and entity classification belong to `infoextract`. That boundary is intentional and mirrors how production document platforms are built: Google Document AI emits layout units with text anchors and bounding polygons, then exposes separate entity objects with page anchors; Amazon Textract exposes Block objects with geometry, IDs, and relationships; Microsoft Document Intelligence emits a reading-order content string with bounding regions, then layers structured fields on top.
 
 ---
 
@@ -12,55 +14,91 @@ The library provides building blocks for VRDU pipelines: document ingestion, lay
 
 ### FR-1: Document Ingestion
 
-- Load documents from local file paths
+- Load documents from local file paths or bytes
 - Support PDF (native text and scanned/image-based)
 - Support raster images (PNG, JPEG, TIFF)
+- Record source MIME type, SHA-256 hash, page count, and ingestion timestamp
 - Normalise multi-page documents into per-page representations
-- Preserve page dimensions for coordinate normalisation
+- Preserve page dimensions, render DPI, and orientation for coordinate normalisation
 
-### FR-2: Text and Layout Extraction
+### FR-2: Image Preprocessing
 
-- Extract raw text with bounding box coordinates (x_min, y_min, x_max, y_max)
-- Preserve word-level, line-level, and block-level granularity
-- Support both native PDF text (no OCR required) and OCR fallback for scanned content
-- Return coordinates normalised to \[0, 1\] relative to page dimensions
+- Execute a versioned preprocessing chain before OCR: border clean / crop, deskew, dewarp, denoise, alpha removal, contrast normalisation, binarization
+- Record each preprocessing step as an explicit named `Transform` with input artifact IDs, output artifact ID, and parameters (e.g. skew angle, binarization threshold, denoise method)
+- Expose quality signals per preprocessing step: blur estimate (Laplacian variance), skew angle, border-darkness ratio, binarization method and threshold
+- Minimum render resolution: 300 DPI for OCR paths; 150 DPI for layout-only paths
 
-### FR-3: Layout Analysis
+### FR-3: Text and Layout Extraction
 
-- Detect document regions: text blocks, tables, figures, headers, footers
-- Establish reading order across multi-column and complex layouts
-- Identify document hierarchy (title, section heading, body, caption)
+- Extract raw text with **per-token normalised-quad bounding regions** (x0,y0,x1,y1,x2,y2,x3,y3 in page-local \[0,1\] space)
+- Expose word, line, block, glyph, and paragraph granularity
+- Support native PDF text extraction (no OCR required) and OCR fallback for scanned content
+- Auto-select path: native extraction if token density exceeds threshold; OCR otherwise
+- Record per-token OCR engine, confidence \[0,1\], raw confidence, raw confidence scale, and text type (printed / handwritten)
 
-### FR-4: Table Detection and Parsing
+### FR-4: Structural Role Labelling
 
-- Locate tables within document pages
-- Extract table structure: rows, columns, and cell contents
-- Handle merged cells and spanning headers
-- Return tables as structured objects (list of lists or dataframe-compatible)
+- Label every detected region with a **document-intrinsic structural role**: paragraph, title, section heading, page header, page footer, page number, footnote, figure, table, cell, selection mark, signature
+- Record reading order as an ordered graph of `{from, to, relation, confidence}` edges between blocks
+- Detect and record printed-vs-handwritten text type per token
+- Detect language and script per region where the OCR engine supports it
+- Detect reading direction (LTR / RTL / vertical)
 
-### FR-5: Key-Value Extraction
+These roles are layout- and representation-level facts, not business ontology decisions. They must be owned by `docunderstand`, not by `infoextract`.
 
-- Identify field labels and their associated values in forms
-- Handle spatial proximity-based pairing (label left of value, label above value)
-- Support both typed (checkboxes, dates, amounts) and free-text values
+### FR-5: Table Detection and Parsing
 
-### FR-6: Entity and Field Extraction
+- Locate table regions within document pages
+- Extract table structure: rows, columns, cell contents, spanning cells
+- Return tables as structured `Table` / `Cell` objects with per-cell bounding regions and text spans
+- Preserve cell merge information (row span, column span)
 
-- Extract named entities relevant to document type (amounts, dates, names, addresses, identifiers)
-- Support document-type-aware extraction schemas
-- Accept user-defined extraction schemas for ad-hoc field extraction
+### FR-6: Selection Mark Detection
 
-### FR-7: Structured Output
+- Detect checkboxes, radio buttons, and similar selection marks
+- Record state (selected / unselected / unknown) and bounding region
 
-- Return results as typed Python dataclasses or Pydantic models
-- Support serialisation to JSON and dict
-- Preserve provenance: which page, bounding box, and confidence score for each extracted value
+### FR-7: Canonical Document Graph
 
-### FR-8: Pipeline Composition
+- Represent the processed document as an **immutable canonical document graph** with stable, unique IDs for: document, artifact, page, block, line, token, glyph, table, cell, entity, relation, action
+- Maintain three layers: layout (geometric structure), semantics (entity/relation claims), actions (redactions, annotations)
+- Every semantic entity anchor must point to all three: token/glyph IDs, text-stream spans, and page-local polygon regions — the **triple anchor**
+- Coordinate space: page-local normalised polygons or quads as canonical; axis-aligned bounding boxes as cached derivatives only
+
+### FR-8: Text Streams
+
+- Assemble a canonical text stream per document in reading order
+- Record span unit (grapheme or token) and the full text string
+- Every token's `span` must reference `{stream_id, start, end}` into this stream
+- The text stream is the stable backbone for text-position selectors; it must survive tokenisation drift across OCR engine versions
+
+### FR-9: Structured Output
+
+- Return an `ExtractionResult` serialisable to JSON and to Pydantic models
+- Every extracted field includes: value, confidence \[0,1\], triple anchor (token IDs + text span + page regions), page number, and provenance (extractor ID, model version)
+- Preserve `raw_confidence` and `raw_confidence_scale` alongside normalised `confidence`
+- Support one-to-many text hypotheses per token where OCR correction or ambiguity is relevant
+
+### FR-10: Redaction Actions
+
+- Represent redaction intent as first-class `Redaction` objects in the actions layer: `{id, entity_id, page_id, regions[], mode, label, confidence, status}`
+- `regions[]` is an ordered per-page list of quads/polygons — not a single bounding box — because one entity can span multiple lines, regions, or pages
+- Modes: `burn_in` (raster mask), `pdf_redact` (native PDF redaction object + content removal), `metadata_sanitize`
+- For born-digital PDFs: apply native PDF redaction objects, remove underlying content, sanitize metadata and attachments; do not treat "draw black rectangles" as complete redaction
+- For scanned PDFs: burn masks into the page image layer; sanitize metadata and attachments at the container level
+- `status` lifecycle: `proposed` → `approved` → `applied` → `verified`
+
+### FR-11: Preprocessing Artifact Lineage
+
+- Maintain an `artifacts[]` list: source document, rendered page images, preprocessed page images, derived crops
+- Maintain a `transforms[]` list: each stage records `{id, stage, input_artifact_ids, output_artifact_ids, params, quality, telemetry}`
+- This lineage enables downstream QA, training data generation, and audit
+
+### FR-12: Pipeline Composition
 
 - Allow users to compose extraction steps into a pipeline
 - Support custom stages at any point in the pipeline
-- Be interoperable with infoextract's extraction primitives
+- Be interoperable with infoextract's semantic extraction primitives
 
 ---
 
@@ -69,40 +107,47 @@ The library provides building blocks for VRDU pipelines: document ingestion, lay
 ### NFR-1: Python Compatibility
 
 - Support Python 3.11, 3.12, 3.13
-- Type-annotated public API throughout
+- Fully type-annotated public API
 
 ### NFR-2: Dependencies
 
-- Minimise mandatory dependencies; keep heavy ML models optional
-- Core extraction (native PDF) must work without ML dependencies
-- OCR and layout model capabilities are optional extras
+- Minimise mandatory dependencies; heavy ML models are optional extras
+- Core extraction (native PDF) must work without ML or OCR dependencies
+- Optional extras: `[ocr]`, `[layout]`, `[dev]`, `[docs]`
 
 ### NFR-3: Performance
 
-- Process a standard single-page document in under 2 seconds on CPU (excluding model loading)
-- Avoid holding entire documents in memory; support page-by-page streaming
+- Process a standard single-page document in under 2 seconds on CPU (excluding model load time)
+- Process pages individually (streaming); do not hold entire documents in memory
 
 ### NFR-4: Correctness
 
-- Coordinate extraction must be pixel-accurate for native PDFs
-- Bounding boxes must be returned in a consistent, documented coordinate space
+- Bounding region coordinates pixel-accurate for native PDFs
+- All coordinates in a consistent documented space; deterministic transform back to native source space preserved
 - Unit test coverage ≥ 80%; integration test coverage ≥ 75%
 
 ### NFR-5: Extensibility
 
-- Public interfaces use abstract base classes or protocols to allow user-supplied backends
+- Public interfaces use abstract base classes or `Protocol` to allow user-supplied backends
 - OCR backend is pluggable (Tesseract, PaddleOCR, cloud APIs)
+- Layout backend is pluggable (heuristic, layoutparser, docling)
 
-### NFR-6: Packaging
+### NFR-6: Telemetry
+
+- Emit OpenTelemetry-compatible spans per pipeline stage with standardised attributes (see Architecture)
+- Quality signals (OCR confidence, skew angle, blur estimate, low-confidence token ratio) emitted as span attributes, not just logs
+- Warnings (low-confidence clusters, unresolved regions, sanitize failures) emitted as structured events on the relevant span
+
+### NFR-7: Packaging
 
 - Distributed on PyPI as `docunderstand`
-- Optional extras: `[ocr]`, `[layout]`, `[docs]`, `[dev]`
 
 ---
 
 ## Out of Scope
 
-- Training or fine-tuning of ML models
+- Training or fine-tuning ML models
 - Cloud storage or remote document fetching (handled by infoextract)
-- Full document reconstruction (e.g. PDF→Word)
+- Full document reconstruction (PDF → Word)
 - Handwriting recognition beyond what OCR backends provide
+- Business entity classification, ontology alignment, named entity typing (belongs to infoextract)
