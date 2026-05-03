@@ -93,6 +93,7 @@ markdown_extensions:
   - pymdownx.tasklist:
       custom_checkbox: true
   - pymdownx.tilde
+  - pymdownx.snippets
 
 nav:
   - Home: index.md
@@ -101,8 +102,16 @@ nav:
       - Quick Start: getting-started/quickstart.md
   - User Guide:
       - Overview: guide/overview.md
+  - VRDU Research:
+      - Introduction: vrdu/index.md
+      - Datasets: vrdu/datasets.md
+      - Models and Methods: vrdu/models.md
+      - Python Ecosystem: vrdu/ecosystem.md
+      - Pipeline Architecture: vrdu/pipeline.md
   - Reference:
       - API Documentation: reference/api.md
+      - Requirements: reference/requirements.md
+      - Architecture: reference/architecture.md
       - Changelog: reference/changelog.md
   - Development:
       - Contributing: development/contributing.md
