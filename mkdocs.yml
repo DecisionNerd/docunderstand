@@ -110,6 +110,7 @@ nav:
       - Pipeline Architecture: vrdu/pipeline.md
   - Reference:
       - API Documentation: reference/api.md
+      - Canonical Schema: reference/schema.md
       - Requirements: reference/requirements.md
       - Architecture: reference/architecture.md
       - Changelog: reference/changelog.md
