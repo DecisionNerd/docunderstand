@@ -1,0 +1,27 @@
+coverage:
+  status:
+    project:
+      default:
+        target: 80%
+        threshold: 2%
+        if_ci_failed: error
+    patch:
+      default:
+        target: 80%
+        threshold: 5%
+        if_ci_failed: error
+
+  precision: 2
+  round: down
+  range: "70...95"
+
+comment:
+  layout: "header, diff, flags, footer, tests"
+  behavior: default
+  require_changes: false
+
+ignore:
+  - "tests/**"
+  - "docs/**"
+  - "scripts/**"
+  - "**/__init__.py"
