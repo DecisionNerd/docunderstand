@@ -2,6 +2,13 @@
 
 ## Overview
 
+`docunderstand` is the go-to Python workbench for VRDU processing. It is not a single prescribed pipeline — it is a composable set of tools covering every stage of document understanding, designed so that:
+
+- You can pick the components appropriate to your problem (document type, quality, output need)
+- You can swap any component for an alternative that better fits your constraints
+- You always get a standard `ExtractionResult` at the end, regardless of which path was taken
+- Downstream systems (pipelines, agents, APIs) consume `ExtractionResult` without knowing which tools processed the document
+
 `docunderstand` is structured as a layered pipeline library. Each layer has a single responsibility and communicates through typed interfaces. Users can engage the full pipeline or drop into any individual layer.
 
 ```

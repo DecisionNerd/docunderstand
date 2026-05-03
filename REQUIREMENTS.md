@@ -2,9 +2,11 @@
 
 ## Purpose
 
-`docunderstand` is a companion library to [infoextract](https://github.com/DecisionNerd/infoextract) for working with visually rich documents — PDFs, scanned forms, invoices, receipts, and any document where spatial layout carries meaning alongside textual content.
+`docunderstand` is the go-to Python workbench for visually rich document understanding. Given a VRDU problem, it provides all the tools needed to: understand the problem, choose the right approach, compose the right components, and produce a standard `ExtractionResult` that downstream systems can consume regardless of how the document was processed.
 
-The library owns **perception, geometric grounding, reading order, and document-intrinsic structure**. Business semantics, ontology alignment, and entity classification belong to `infoextract`. That boundary is intentional and mirrors how production document platforms are built: Google Document AI emits layout units with text anchors and bounding polygons, then exposes separate entity objects with page anchors; Amazon Textract exposes Block objects with geometry, IDs, and relationships; Microsoft Document Intelligence emits a reading-order content string with bounding regions, then layers structured fields on top.
+It is not a single prescribed pipeline. VRDU problems vary enormously — a born-digital invoice, a 1970s scanned government form, and a camera photo of a receipt each require different tools. `docunderstand` covers all of those paths with a composable component model and a stable output contract.
+
+As a companion to [infoextract](https://github.com/DecisionNerd/infoextract), the library owns **perception, geometric grounding, reading order, and document-intrinsic structure**. Business semantics, ontology alignment, and entity classification belong to `infoextract`. That boundary is intentional and mirrors how production document platforms are built: Google Document AI emits layout units with text anchors and bounding polygons, then exposes separate entity objects with page anchors; Amazon Textract exposes Block objects with geometry, IDs, and relationships; Microsoft Document Intelligence emits a reading-order content string with bounding regions, then layers structured fields on top.
 
 ---
 
