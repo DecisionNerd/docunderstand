@@ -1,0 +1,41 @@
+name: Release Tracking
+
+on:
+  pull_request:
+    types: [closed, labeled]
+  workflow_dispatch:
+
+jobs:
+  label-merged-pr:
+    name: Label Merged PRs
+    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Add release:pending label
+        if: |
+          contains(github.event.pull_request.labels.*.name, 'release:patch') ||
+          contains(github.event.pull_request.labels.*.name, 'release:minor') ||
+          contains(github.event.pull_request.labels.*.name, 'release:major')
+        run: |
+          gh pr edit ${{ github.event.pull_request.number }} \
+            --add-label "release:pending" \
+            --repo ${{ github.repository }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  close-reminder-on-release:
+    name: Close Reminder on Release
+    if: github.event_name == 'release' && github.event.action == 'published'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Close release reminder issues
+        run: |
+          gh issue list --label "release:reminder" --state open --json number --jq '.[].number' | while read issue; do
+            gh issue close $issue --comment "Closing automatically — release ${{ github.event.release.tag_name }} was published."
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

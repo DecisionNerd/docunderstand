@@ -1,0 +1,130 @@
+name: PR Auto-Labeling
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  label-pr:
+    name: Auto-Label PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed files
+        id: changed_files
+        run: |
+          BASE_SHA=${{ github.event.pull_request.base.sha }}
+          HEAD_SHA=${{ github.event.pull_request.head.sha }}
+
+          FILES=$(git diff --name-only $BASE_SHA..$HEAD_SHA)
+
+          echo "Changed files:"
+          echo "$FILES"
+
+          HAS_SRC=0
+          HAS_TESTS=0
+          HAS_DOCS=0
+          HAS_CI=0
+          HAS_SCRIPTS=0
+
+          while IFS= read -r file; do
+            case "$file" in
+              src/*)
+                HAS_SRC=1
+                ;;
+              tests/*)
+                HAS_TESTS=1
+                ;;
+              docs/*.md|*.md|mkdocs.yml)
+                HAS_DOCS=1
+                ;;
+              .github/*)
+                HAS_CI=1
+                ;;
+              scripts/*)
+                HAS_SCRIPTS=1
+                ;;
+            esac
+          done <<< "$FILES"
+
+          echo "has_src=$HAS_SRC" >> $GITHUB_OUTPUT
+          echo "has_tests=$HAS_TESTS" >> $GITHUB_OUTPUT
+          echo "has_docs=$HAS_DOCS" >> $GITHUB_OUTPUT
+          echo "has_ci=$HAS_CI" >> $GITHUB_OUTPUT
+          echo "has_scripts=$HAS_SCRIPTS" >> $GITHUB_OUTPUT
+
+      - name: Determine labels
+        id: labels
+        run: |
+          LABELS=""
+
+          if [ "${{ steps.changed_files.outputs.has_src }}" = "1" ]; then
+            LABELS="$LABELS core"
+          fi
+          if [ "${{ steps.changed_files.outputs.has_tests }}" = "1" ]; then
+            LABELS="$LABELS tests"
+          fi
+          if [ "${{ steps.changed_files.outputs.has_docs }}" = "1" ]; then
+            LABELS="$LABELS documentation"
+          fi
+          if [ "${{ steps.changed_files.outputs.has_ci }}" = "1" ]; then
+            LABELS="$LABELS ci-cd"
+          fi
+          if [ "${{ steps.changed_files.outputs.has_scripts }}" = "1" ]; then
+            LABELS="$LABELS tooling"
+          fi
+
+          if [ "${{ steps.changed_files.outputs.has_docs }}" = "1" ] && \
+             [ "${{ steps.changed_files.outputs.has_src }}" = "0" ] && \
+             [ "${{ steps.changed_files.outputs.has_tests }}" = "0" ]; then
+            LABELS="$LABELS release:none"
+          fi
+
+          if [ "${{ steps.changed_files.outputs.has_ci }}" = "1" ] && \
+             [ "${{ steps.changed_files.outputs.has_src }}" = "0" ] && \
+             [ "${{ steps.changed_files.outputs.has_tests }}" = "0" ] && \
+             [ "${{ steps.changed_files.outputs.has_docs }}" = "0" ]; then
+            LABELS="$LABELS release:none"
+          fi
+
+          LABELS=$(echo "$LABELS" | xargs)
+
+          echo "labels=$LABELS" >> $GITHUB_OUTPUT
+          echo "Labels to add: $LABELS"
+
+      - name: Add labels to PR
+        if: steps.labels.outputs.labels != ''
+        run: |
+          LABELS="${{ steps.labels.outputs.labels }}"
+          LABELS_COMMA=$(echo "$LABELS" | tr ' ' ',')
+          echo "Adding labels: $LABELS_COMMA"
+          gh pr edit ${{ github.event.pull_request.number }} \
+            --add-label "$LABELS_COMMA" \
+            --repo ${{ github.repository }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Post comment with label summary
+        if: steps.labels.outputs.labels != ''
+        run: |
+          LABELS="${{ steps.labels.outputs.labels }}"
+          LABEL_LIST=""
+          for label in $LABELS; do
+            LABEL_LIST="${LABEL_LIST}- \`${label}\`\n"
+          done
+          gh pr comment ${{ github.event.pull_request.number }} --body "🏷️ **Auto-labeled based on changed files:**
+
+$LABEL_LIST
+
+*Labels are automatically applied based on which files were modified. You can add or remove labels as needed.*
+" --repo ${{ github.repository }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
